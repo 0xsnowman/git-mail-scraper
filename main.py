@@ -76,7 +76,7 @@ while True:
 
         print("Starting the scraper...")
         # Start the scraper process
-        scraper_script_path = "scraper_last_page_upgrade.py"
+        scraper_script_path = "scraper.py"
 
         with open(scraper_script_path, "r") as script_file:
             code = script_file.read()
