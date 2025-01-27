@@ -1,142 +1,92 @@
-import sys
-import os
-from selenium import webdriver
-from bs4 import BeautifulSoup
-import time
-import urllib.parse
-import re
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import subprocess
+import time
+import psutil
+import sys
+from datetime import datetime
 
-# List of countries to scrape
-country_list = [
-    "Denmark", "Austria", "Belgium", "Bulgaria", "Croatia", 
-    "Finland", "Iceland", "Italy", "Latvia", "Luxembourg", "Malta", "Netherlands", "Poland", 
-    "Romania", "Portugal", "Spain", "United States", "Mexico", "Panama", "Argentina", "Chile", 
-    "Colombia", "Ecuador", "Paraguay", "Australia", "New Zealand", "India", "Pakistan", "Japan", 
-    "Saudi Arabia", "UAE", "Kuwait", "Qatar", "Iran"
-]
+print("Using Python executable:", sys.executable)
+print("Python version:", sys.version)
 
-# File paths for tracking progress
-last_page_file = "last_page.txt"
-last_country_file = "last_country.txt"
-
-# Function to read the last processed country
-def get_last_country():
-    if os.path.exists(last_country_file):
-        with open(last_country_file, "r") as file:
-            return file.read().strip()
-    return None
-
-# Function to save the last processed country
-def save_last_country(country):
-    with open(last_country_file, "w") as file:
-        file.write(country)
-
-# Function to read the last page index
-def get_last_page():
-    if os.path.exists(last_page_file):
-        with open(last_page_file, "r") as file:
-            return int(file.read().strip())
-    return 1
-
-# Function to save the last page index
-def save_last_page(page):
-    with open(last_page_file, "w") as file:
-        file.write(str(page))
-
-# Determine the starting country
-last_country = get_last_country()
-if last_country and last_country in country_list:
-    start_country_index = country_list.index(last_country)
-else:
-    start_country_index = 0
-
-# Path to Chrome executable
-chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-
-# Path to Chrome profile
-chrome_profile = "C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 1"
-
-# Remote debugging port
+# Paths
+chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"  # Update as needed
+chrome_profile = "C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 1"  # Replace with your profile path
 debugging_port = 9222
+error_log_path = "error_log.txt"  # Path to the error log file
 
-# Launch Chrome in debugging mode
-subprocess.Popen([
-    chrome_path,
-    f"--remote-debugging-port={debugging_port}",
-    f"--user-data-dir={chrome_profile}"
-])
+def log_error(error_message):
+    """Log error with timestamp to error_log.txt."""
+    with open(error_log_path, "a") as log_file:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_file.write(f"[{timestamp}] {error_message}\n")
 
-# Wait for Chrome to launch
-time.sleep(5)
+def kill_process_by_name(name):
+    """Kill all processes that contain the specified name."""
+    for process in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if name.lower() in (process.info['name'] or '').lower() or name.lower() in ' '.join(process.info.get('cmdline', [])).lower():
+                print(f"Attempting to terminate process: {process.info['name']} (PID: {process.info['pid']})")
+                process.terminate()
+                process.wait(timeout=5)
+                print(f"Terminated process: {process.info['name']} (PID: {process.info['pid']})")
+        except Exception as e:
+            error_message = f"Error terminating process {name}: {e}"
+            print(error_message)
+            log_error(error_message)
 
-# Set up Selenium options
-chrome_options = Options()
-chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
-driver = webdriver.Chrome(options=chrome_options)
+def kill_chrome_debug_process():
+    """Kill any running Chrome processes started for debugging."""
+    for process in psutil.process_iter(['name', 'cmdline']):
+        try:
+            if process.info['name'] == "chrome.exe" and f"--remote-debugging-port={debugging_port}" in " ".join(process.info['cmdline']):
+                process.terminate()
+                process.wait(timeout=5)  # Ensure process terminates
+                print(f"Killed Chrome debug process: PID {process.pid}")
+        except Exception as e:
+            error_message = f"Error killing Chrome debug process: {e}"
+            print(error_message)
+            log_error(error_message)
 
-# Iterate through countries starting from the last processed one
-for i in range(start_country_index, len(country_list)):
-    country = country_list[i]
-    print(f"Scraping data for country: {country}")
+def start_chrome_debug_browser():
+    """Start Chrome in debug mode."""
+    try:
+        print("Starting Chrome debug browser...")
+        subprocess.Popen([
+            chrome_path,
+            f"--remote-debugging-port={debugging_port}",
+            f"--user-data-dir={chrome_profile}"
+        ])
+        time.sleep(5)  # Give Chrome time to start
+    except Exception as e:
+        error_message = f"Error starting Chrome debug browser: {e}"
+        print(error_message)
+        log_error(error_message)
 
-    # Save the current country to file
-    save_last_country(country)
+while True:
+    try:
+        # Kill Astrill VPN process
+        print("Stopping Astrill VPN...")
+        kill_process_by_name("Astrill")
 
-    # Open file for saving emails
-    file_path = f"email_addresses({country}).txt"
-    with open(file_path, "a") as file:
-        last_page = get_last_page()
+        # Kill any existing Chrome debug processes
+        print("Stopping Chrome debug browser...")
+        kill_chrome_debug_process()
 
-        # Scrape pages starting from the last processed page
-        for page_num in range(last_page, 101):  # Example: Scrape the first 100 pages
-            save_last_page(page_num)  # Save the current page number
-            encoded_location = urllib.parse.quote(country)
-            url = f"https://github.com/search?q=location%3A{encoded_location}&type=users&s=joined&o=desc&p={page_num}"
-            driver.get(url)
-            time.sleep(10)  # Adjust based on your network speed
+        # Restart Chrome debug browser
+        # start_chrome_debug_browser()
 
-            # Wait for search results to load
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_all_elements_located((By.CLASS_NAME, "search-results-page"))
-            )
+        print("Starting the scraper...")
+        # Start the scraper process
+        scraper_script_path = "scraper_last_page_upgrade.py"
 
-            html = driver.page_source
-            soup = BeautifulSoup(html, "html.parser")
-            divs = soup.find_all("div", class_="search-title")  # Update this based on actual link class
+        with open(scraper_script_path, "r") as script_file:
+            code = script_file.read()
+            exec(code)  # Execute the scraper code
 
-            print(f"Checking the HTML page for country {country}, page {page_num}...")
-
-            for div in divs:
-                link = div.find("a")
-                if link:
-                    username = link.get_text(strip=True)
-                    user_url = link["href"]
-                    print(f"Checking profile: {username} ({user_url})")
-
-                    driver.get("https://github.com" + user_url)
-                    time.sleep(10)  # Allow time for the profile page to load
-                    profile_html = driver.page_source
-
-                    # Find email addresses
-                    email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-                    emails = re.findall(email_pattern, profile_html)
-
-                    if emails:
-                        for email in emails:
-                            print(f"Found email: {email}")
-                            file.write(f"{email}\n")
-
-        # Reset the last page to 1 for the next country
-        save_last_page(1)
-
-# Cleanup: Delete the last country file when all countries are processed
-if os.path.exists(last_country_file):
-    os.remove(last_country_file)
-
-print("Scraping completed for all countries.")
-driver.quit()
+        print("Scraper process exited. Restarting in 10 seconds...")
+        time.sleep(10)
+    except Exception as e:
+        error_message = f"Monitor encountered an error: {e}"
+        print(error_message)
+        log_error(error_message)
+        print("Retrying in 10 seconds...")
+        time.sleep(10)
