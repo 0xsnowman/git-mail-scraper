@@ -122,6 +122,8 @@ for i in range(start_country_index, len(country_list)):
                     time.sleep(10)  # Allow time for the profile page to load
                     profile_html = driver.page_source
 
+                    print(f"Result checking: {profile_html})")
+
                     # Find email addresses
                     email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
                     emails = re.findall(email_pattern, profile_html)
